@@ -171,7 +171,10 @@ export async function featuredListings(
   city: string | undefined,
   userId?: string,
 ) {
-  const where: Prisma.ListingWhereInput = { AND: [publicListingWhere, city ? { city } : {}] };
+  const province = city ? LOCATIONS.find((p) => p.name === city) : undefined;
+  const where: Prisma.ListingWhereInput = {
+    AND: [publicListingWhere, province ? { province: province.name } : city ? { city } : {}],
+  };
   const orderBy: Prisma.ListingOrderByWithRelationInput[] =
     type === 'popular'
       ? [{ bookings: { _count: 'desc' } }, { favorites: { _count: 'desc' } }, { createdAt: 'desc' }]

@@ -237,7 +237,7 @@ async function main() {
         renterNote: b.note,
         status: b.status,
         paymentStatus: b.payment ?? 'UNPAID',
-        createdAt: addDays(start, -3),
+        createdAt: new Date(Math.min(addDays(start, -3).getTime(), Date.now() - (b.startOffset > 0 ? b.startOffset * 3_600_000 : 86_400_000))),
       },
     });
     if (b.review) {
