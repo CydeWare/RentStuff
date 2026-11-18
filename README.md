@@ -91,6 +91,10 @@ All 11 seeded users share this password. These are fictional development account
 | `JWT_EXPIRES_IN` | no | Session lifetime, default `7d` |
 | `PORT` | no | API port, default `4000` |
 | `CLIENT_URL` | no | Allowed CORS origin(s), comma separated |
+| `APP_URL` | no | Public URL of the site, used for social-login redirect URIs. Defaults to the first `CLIENT_URL` |
+| `OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET` | no | Enables "Continue with Google" |
+| `OAUTH_FACEBOOK_CLIENT_ID`, `OAUTH_FACEBOOK_CLIENT_SECRET` | no | Enables "Continue with Facebook" |
+| `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET` | no | Enables "Continue with GitHub" |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | no | If all are set, uploads go to Cloudinary. Otherwise they are saved in `server/uploads/` (development fallback) |
 
 No secrets are used in the frontend. In development the Vite proxy keeps the auth cookie first-party.
@@ -104,6 +108,44 @@ No secrets are used in the frontend. In development the Vite proxy keeps the aut
 | `npm test` | Server unit + integration tests (needs `TEST_DATABASE_URL`) |
 | `npm run build` | Production builds (`server/dist`, `client/dist`) |
 | `npm run db:migrate` / `db:seed` / `db:reset` | Prisma migrations and demo data |
+
+## Social login (Google, Facebook, GitHub)
+
+Users can sign up and log in with email/password or with any configured provider. A "Continue with …" button appears on the login and sign-up pages **only** for providers whose client ID and secret are both set in `server/.env`. Restart the API after editing `.env`.
+
+Each provider needs this **redirect URI** (replace `google` with `facebook` or `github`):
+
+```
+http://localhost:5173/api/auth/oauth/google/callback
+```
+
+In production use your real domain (and set `APP_URL` to it).
+
+### Google
+1. Open https://console.cloud.google.com/ and create (or select) a project.
+2. **APIs & Services → OAuth consent screen**: choose *External*, fill in the app name and your email. While the app is in *Testing*, add your Google account under **Test users**.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type **Web application**.
+4. Under **Authorized redirect URIs** add `http://localhost:5173/api/auth/oauth/google/callback`.
+5. Copy the Client ID and Client secret into `OAUTH_GOOGLE_CLIENT_ID` and `OAUTH_GOOGLE_CLIENT_SECRET`.
+
+### Facebook
+1. Open https://developers.facebook.com/apps and create an app (use case: *Authenticate and request data from users with Facebook Login*).
+2. In **Facebook Login → Settings**, add `http://localhost:5173/api/auth/oauth/facebook/callback` to **Valid OAuth Redirect URIs**. (Facebook allows `localhost` while the app is in development mode.)
+3. In **App settings → Basic**, copy the App ID and App secret into `OAUTH_FACEBOOK_CLIENT_ID` and `OAUTH_FACEBOOK_CLIENT_SECRET`.
+4. Make sure the `email` permission is enabled. Accounts without a confirmed email can't be used.
+
+### GitHub
+1. Open https://github.com/settings/developers → **New OAuth App**.
+2. Homepage URL `http://localhost:5173`, Authorization callback URL `http://localhost:5173/api/auth/oauth/github/callback`.
+3. Copy the Client ID, generate a client secret, and put them in `OAUTH_GITHUB_CLIENT_ID` and `OAUTH_GITHUB_CLIENT_SECRET`.
+
+### How it behaves
+- **New user:** after approving at the provider, they land on a short "Almost done" page to add a phone number and city (required for every Rentora account), then the account is created. Their name and photo come from the provider.
+- **Returning user:** signed straight in.
+- **Email already registered with a password:** not merged automatically (that would let anyone who pre-registered someone else's email keep access). The user logs in with their password and clicks **Connect** under **Account settings → Login methods**.
+- **Account settings:** connect or remove providers, and social-only users can set a password. The last remaining login method can't be removed.
+- **Security:** standard OAuth 2.0 authorization-code flow on the server. A random `state` value (in a signed, HTTP-only, 10-minute cookie) blocks CSRF, PKCE is used where supported, client secrets never reach the browser, only verified provider emails are accepted, and redirects after login are restricted to same-site paths.
+- **Adding another provider** (e.g. Apple, LinkedIn, X): add an entry to `server/src/services/oauth.providers.ts` with its endpoints and a `fetchProfile` function, plus two env variables.
 
 ## Features
 
@@ -147,7 +189,7 @@ No secrets are used in the frontend. In development the Vite proxy keeps the aut
 npm test
 ```
 
-49 tests cover pricing (including the 3-day Rp100.000 example), date validation, the booking state machine, and API integration flows. The flows include register/login/logout, listing CRUD and ownership checks, search/filter/sort, favorites, booking request/accept/start/complete/review, overlap prevention (app level and DB level), blocked dates, price snapshots, private-data isolation, messaging access control, notifications, reports, admin-only endpoints and suspension.
+65 tests cover pricing (including the 3-day Rp100.000 example), date validation, the booking state machine, and API integration flows. The flows include register/login/logout, listing CRUD and ownership checks, search/filter/sort, favorites, booking request/accept/start/complete/review, overlap prevention (app level and DB level), blocked dates, price snapshots, private-data isolation, messaging access control, notifications, reports, admin-only endpoints, suspension, and social login (state/CSRF checks, sign-up, connect/disconnect, no auto-linking, open-redirect protection).
 
 ## Not included in this MVP
 
@@ -155,7 +197,6 @@ npm test
 - **Maps:** no API key is configured, so locations use a province/city/district selector and text descriptions.
 - **Real-time chat:** messages are polled. `message.service.ts#createMessage` is the single place to emit a Socket.IO event later.
 - **Email/push notifications:** shown as "Coming soon" in settings.
-- **Social login:** not offered. There are no placeholder buttons.
 - **Social links:** the footer says the accounts are launching soon instead of linking to non-existent pages.
 
 Demo item photos come from Unsplash. Demo prices are fictional.

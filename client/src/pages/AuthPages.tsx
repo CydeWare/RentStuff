@@ -11,8 +11,12 @@ import { ApiError, errorMessage } from '@/services/api';
 import { uploadApi } from '@/services/endpoints';
 import { Logo, LocationSelect } from '@/components/common';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/form-controls';
-import { UserAvatar } from '@/components/ui/misc';
+import { Field, Input, Select } from '@/components/ui/form-controls';
+import { Spinner, UserAvatar } from '@/components/ui/misc';
+import { OAUTH_ERRORS, ProviderIcon, SocialLoginButtons } from '@/components/SocialLogin';
+import { authApi } from '@/services/endpoints';
+import { useLocations } from '@/hooks/useMeta';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { BRAND } from '@/config/brand';
 
 const unsplash = (id: string) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1200&q=80`;
@@ -65,6 +69,7 @@ export function LoginPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const login = useLogin();
+  const oauthError = params.get('oauthError');
   const {
     register,
     handleSubmit,
@@ -83,6 +88,12 @@ export function LoginPage() {
         </>
       }
     >
+      {oauthError && (
+        <p className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
+          {OAUTH_ERRORS[oauthError] ?? OAUTH_ERRORS.failed}
+        </p>
+      )}
+      <SocialLoginButtons redirect={params.get('redirect')} />
       <form
         className="space-y-5"
         noValidate
@@ -195,6 +206,7 @@ export function RegisterPage() {
         </>
       }
     >
+      <SocialLoginButtons redirect={params.get('redirect')} verb="Sign up" />
       <form className="space-y-5" noValidate onSubmit={onSubmit}>
         {registerMutation.isError && !(registerMutation.error instanceof ApiError && Object.keys(registerMutation.error.fieldErrors).length) && (
           <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
@@ -259,6 +271,126 @@ export function RegisterPage() {
             Privacy Policy
           </Link>
           .
+        </p>
+      </form>
+    </AuthShell>
+  );
+}
+
+const completeSchema = z.object({
+  name: z.string().trim().min(2, 'Enter your full name').max(80),
+  phone: z
+    .string()
+    .trim()
+    .refine((v) => /^(\+62|62|0)8\d{7,12}$/.test(v.replace(/[\s-]/g, '')), 'Enter a valid Indonesian phone number, e.g. 0812xxxxxxxx'),
+  city: z.string().min(1, 'Choose your city'),
+  district: z.string().optional(),
+});
+
+/** Second step after a social login for a new user: phone and city are required for every account. */
+export function CompleteSignupPage() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { data: provinces = [] } = useLocations();
+  const pending = useQuery({
+    queryKey: ['oauth-pending'],
+    queryFn: () => authApi.pendingSignup().then((r) => r.pending),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const form = useForm<z.infer<typeof completeSchema>>({ resolver: zodResolver(completeSchema), defaultValues: { name: '', city: BRAND.defaultCity, district: '' } });
+  const { register, control, handleSubmit, reset, watch, setValue, setError, formState: { errors } } = form;
+
+  useEffect(() => {
+    if (pending.data) reset({ name: pending.data.name, phone: '', city: BRAND.defaultCity, district: '' });
+  }, [pending.data, reset]);
+
+  const city = watch('city');
+  const districts = provinces.flatMap((p) => p.cities).find((c) => c.name === city)?.districts ?? [];
+
+  const complete = useMutation({
+    mutationFn: authApi.completeSignup,
+    onSuccess: ({ user, redirect }) => {
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'meta' });
+      qc.setQueryData(ME_KEY, user);
+      toast.success(`Welcome to ${BRAND.name}, ${user.name.split(' ')[0]}!`);
+      navigate(safeRedirect(redirect), { replace: true });
+    },
+    onError: (e) => {
+      if (e instanceof ApiError) for (const [k, msg] of Object.entries(e.fieldErrors)) setError(k as 'name', { message: msg });
+    },
+  });
+
+  if (pending.isLoading) return <Spinner className="min-h-dvh" />;
+  if (!pending.data) {
+    return (
+      <AuthShell title="Sign-up session expired" subtitle="For your security, this step must be finished within 15 minutes.">
+        <Button asChild size="lg" className="w-full">
+          <Link to="/register">Start again</Link>
+        </Button>
+      </AuthShell>
+    );
+  }
+  const p = pending.data;
+
+  return (
+    <AuthShell title="Almost done" subtitle="Add a few details so owners and renters can arrange pickups with you.">
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-line bg-white p-4">
+        <UserAvatar name={p.name || p.email} src={p.picture} className="size-12" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold">{p.email}</p>
+          <p className="flex items-center gap-1.5 text-xs text-muted">
+            <ProviderIcon provider={p.provider} className="size-3.5" /> Verified with {p.providerLabel}
+          </p>
+        </div>
+      </div>
+      <form className="space-y-5" noValidate onSubmit={handleSubmit((v) => complete.mutate({ ...v, district: v.district || undefined }))}>
+        {complete.isError && !(complete.error instanceof ApiError && Object.keys(complete.error.fieldErrors).length) && (
+          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
+            {errorMessage(complete.error)}
+          </p>
+        )}
+        <Field label="Full name" htmlFor="c-name" error={errors.name?.message} required>
+          <Input id="c-name" autoComplete="name" aria-invalid={!!errors.name} {...register('name')} />
+        </Field>
+        <Field label="Phone number" htmlFor="c-phone" error={errors.phone?.message} hint="Shared only with people whose booking you accept, or who accept yours" required>
+          <Input id="c-phone" type="tel" autoComplete="tel" placeholder="0812xxxxxxxx" aria-invalid={!!errors.phone} {...register('phone')} />
+        </Field>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field label="City" htmlFor="c-city" error={errors.city?.message} required>
+            <Controller
+              control={control}
+              name="city"
+              render={({ field }) => (
+                <LocationSelect
+                  id="c-city"
+                  value={field.value}
+                  onChange={(v) => {
+                    field.onChange(v);
+                    setValue('district', '');
+                  }}
+                  includeProvinces={false}
+                  allLabel="Choose city"
+                />
+              )}
+            />
+          </Field>
+          <Field label="District" htmlFor="c-district">
+            <Select id="c-district" {...register('district')}>
+              <option value="">Choose district</option>
+              {districts.map((d) => (
+                <option key={d}>{d}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Button type="submit" size="lg" className="w-full" loading={complete.isPending}>
+          Create account
+        </Button>
+        <p className="text-center text-xs text-muted">
+          By continuing you agree to our{' '}
+          <Link to="/terms" className="underline">Terms of Service</Link> and{' '}
+          <Link to="/privacy" className="underline">Privacy Policy</Link>.
         </p>
       </form>
     </AuthShell>

@@ -75,7 +75,7 @@ model User {
   id                 String     @id @default(cuid())
   name               String
   email              String     @unique
-  passwordHash       String
+  passwordHash       String? // null for accounts created with a social login
   phone              String
   profileImage       String?
   bio                String?
@@ -102,8 +102,23 @@ model User {
   reviewsReceived    Review[]                  @relation("ReviewsReceived")
   notifications      Notification[]
   reports            Report[]
+  oauthAccounts      OAuthAccount[]
 
   @@index([city])
+}
+
+/// A social login (Google, Facebook, GitHub, ...) connected to a user.
+model OAuthAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  provider       String // provider key, e.g. "google"
+  providerUserId String // the provider's stable user id ("sub" / "id")
+  email          String?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider]) // one account per provider per user
 }
 
 model Category {

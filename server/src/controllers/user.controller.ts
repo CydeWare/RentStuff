@@ -16,8 +16,7 @@ export async function updateProfile(req: Request, res: Response) {
 
 export async function changePassword(req: Request, res: Response) {
   const input = parse(changePasswordSchema, req.body);
-  await userService.changePassword(currentUser(req).id, input);
-  res.json({ ok: true });
+  res.json({ ok: true, user: await userService.changePassword(currentUser(req).id, input) });
 }
 
 export async function updatePrefs(req: Request, res: Response) {

@@ -2,12 +2,18 @@ import type { z } from 'zod';
 import { prisma } from '../config/prisma.js';
 import { provinceForCity } from '../config/locations.js';
 import { ApiError } from '../utils/ApiError.js';
-import { hashPassword, verifyPassword } from './auth.service.js';
-import { privateUserSelect, publicUserSelect } from './selects.js';
+import { hashPassword, loadMe, verifyPassword } from './auth.service.js';
+import { publicUserSelect } from './selects.js';
 import type { changePasswordSchema, notificationPrefsSchema, updateProfileSchema } from '../validators/user.validator.js';
 
+async function me(userId: string) {
+  const user = await loadMe(userId);
+  if (!user) throw ApiError.notFound('User not found');
+  return user;
+}
+
 export async function updateProfile(userId: string, input: z.infer<typeof updateProfileSchema>) {
-  return prisma.user.update({
+  await prisma.user.update({
     where: { id: userId },
     data: {
       name: input.name,
@@ -18,24 +24,30 @@ export async function updateProfile(userId: string, input: z.infer<typeof update
       bio: input.bio ?? null,
       ...(input.profileImage !== undefined ? { profileImage: input.profileImage } : {}),
     },
-    select: privateUserSelect,
   });
+  return me(userId);
 }
 
+/** Changes the password, or sets a first password for accounts created with a social login. */
 export async function changePassword(userId: string, input: z.infer<typeof changePasswordSchema>) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true } });
-  if (!(await verifyPassword(input.currentPassword, user.passwordHash))) {
-    throw ApiError.badRequest('Current password is incorrect', { fieldErrors: { currentPassword: 'Current password is incorrect' } });
+  if (user.passwordHash) {
+    if (!input.currentPassword || !(await verifyPassword(input.currentPassword, user.passwordHash))) {
+      throw ApiError.badRequest('Current password is incorrect', { fieldErrors: { currentPassword: 'Current password is incorrect' } });
+    }
   }
   await prisma.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(input.newPassword) } });
+  return me(userId);
 }
 
-export function updateNotificationPrefs(userId: string, input: z.infer<typeof notificationPrefsSchema>) {
-  return prisma.user.update({ where: { id: userId }, data: input, select: privateUserSelect });
+export async function updateNotificationPrefs(userId: string, input: z.infer<typeof notificationPrefsSchema>) {
+  await prisma.user.update({ where: { id: userId }, data: input });
+  return me(userId);
 }
 
 export async function setAvatar(userId: string, url: string) {
-  return prisma.user.update({ where: { id: userId }, data: { profileImage: url }, select: privateUserSelect });
+  await prisma.user.update({ where: { id: userId }, data: { profileImage: url } });
+  return me(userId);
 }
 
 /** Public profile: never exposes email or phone. */

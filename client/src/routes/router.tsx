@@ -6,7 +6,7 @@ import { GuestOnly, RequireAdmin, RequireAuth } from './guards';
 import { HomePage } from '@/pages/HomePage';
 import { ExplorePage } from '@/pages/ExplorePage';
 import { ItemDetailsPage } from '@/pages/ItemDetailsPage';
-import { LoginPage, RegisterPage } from '@/pages/AuthPages';
+import { CompleteSignupPage, LoginPage, RegisterPage } from '@/pages/AuthPages';
 import { ListingFormPage } from '@/pages/ListingFormPage';
 import { InfoPage, NotFoundPage, NotificationsPage, PublicProfilePage } from '@/pages/MiscPages';
 import { OverviewPage } from '@/pages/dashboard/OverviewPage';
@@ -29,6 +29,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/complete-signup', element: <CompleteSignupPage /> },
     ],
   },
   {

@@ -11,6 +11,7 @@ import type {
   Message,
   MyListing,
   Notification,
+  OAuthProvider,
   Overview,
   Paged,
   Province,
@@ -62,11 +63,26 @@ export const authApi = {
   login: (body: { email: string; password: string }) => api.post<{ user: Me }>('/auth/login', body),
   register: (body: Record<string, unknown>) => api.post<{ user: Me }>('/auth/register', body),
   logout: () => api.post<{ ok: true }>('/auth/logout'),
+  pendingSignup: () =>
+    api.get<{ pending: { provider: string; providerLabel: string; email: string; name: string; picture: string | null } | null }>('/auth/oauth/signup'),
+  completeSignup: (body: { name: string; phone: string; city: string; district?: string }) =>
+    api.post<{ user: Me; redirect: string }>('/auth/oauth/complete', body),
+  disconnect: (provider: string) => api.delete<{ user: Me }>(`/me/oauth/${provider}`),
 };
+
+/** Full-page URL that starts a social login (or connects a provider when mode="connect"). */
+export function oauthStartUrl(provider: string, opts: { redirect?: string; mode?: 'connect' } = {}) {
+  const q = new URLSearchParams();
+  if (opts.redirect) q.set('redirect', opts.redirect);
+  if (opts.mode) q.set('mode', opts.mode);
+  const s = q.toString();
+  return `/api/auth/oauth/${encodeURIComponent(provider)}/start${s ? `?${s}` : ''}`;
+}
 
 export const metaApi = {
   categories: () => api.get<{ items: Category[] }>('/meta/categories'),
   locations: () => api.get<{ items: Province[] }>('/meta/locations'),
+  config: () => api.get<{ oauthProviders: OAuthProvider[]; imageStorage: string; payments: string }>('/meta/config'),
 };
 
 export const listingApi = {
@@ -104,7 +120,7 @@ export const meApi = {
   overview: () => api.get<Overview>('/me/overview'),
   counts: () => api.get<{ notifications: number; messages: number }>('/me/counts'),
   updateProfile: (body: Record<string, unknown>) => api.put<{ user: Me }>('/me/profile', body),
-  changePassword: (body: { currentPassword: string; newPassword: string }) => api.put('/me/password', body),
+  changePassword: (body: { currentPassword?: string; newPassword: string }) => api.put<{ ok: true; user: Me }>('/me/password', body),
   updatePrefs: (body: { notifyBookings: boolean; notifyMessages: boolean }) =>
     api.put<{ user: Me }>('/me/notification-preferences', body),
 };

@@ -20,6 +20,11 @@ router.post('/auth/register', authLimiter, auth.register);
 router.post('/auth/login', authLimiter, auth.login);
 router.post('/auth/logout', auth.logout);
 router.get('/auth/me', optionalAuth, auth.me);
+// Social login. The literal routes come before /:provider/* so they are not captured.
+router.get('/auth/oauth/signup', auth.oauthPendingSignup);
+router.post('/auth/oauth/complete', authLimiter, auth.oauthComplete);
+router.get('/auth/oauth/:provider/start', authLimiter, optionalAuth, auth.oauthStart);
+router.get('/auth/oauth/:provider/callback', authLimiter, optionalAuth, auth.oauthCallback);
 
 // ---- Meta ----
 router.get('/meta/categories', misc.categories);
@@ -49,6 +54,7 @@ router.get('/me/overview', requireAuth, bookings.overview);
 router.get('/me/counts', requireAuth, misc.counts);
 router.put('/me/profile', requireAuth, users.updateProfile);
 router.put('/me/password', requireAuth, authLimiter, users.changePassword);
+router.delete('/me/oauth/:provider', requireAuth, auth.oauthDisconnect);
 router.put('/me/notification-preferences', requireAuth, users.updatePrefs);
 router.post('/me/avatar', requireAuth, sensitiveLimiter, imageUpload.single('image'), users.uploadAvatar);
 

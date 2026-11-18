@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { LOCATIONS } from '../config/locations.js';
 import { cloudinaryEnabled } from '../config/env.js';
+import { enabledProviders } from '../services/oauth.providers.js';
 import * as listingService from '../services/listing.service.js';
 import * as messageService from '../services/message.service.js';
 import * as notificationService from '../services/notification.service.js';
@@ -21,7 +22,13 @@ export function locations(_req: Request, res: Response) {
 }
 
 export function config(_req: Request, res: Response) {
-  res.json({ imageStorage: cloudinaryEnabled ? 'cloudinary' : 'local', maps: false, payments: 'simulated' });
+  res.json({
+    imageStorage: cloudinaryEnabled ? 'cloudinary' : 'local',
+    maps: false,
+    payments: 'simulated',
+    // Only keys and labels of configured social logins; no client IDs or secrets.
+    oauthProviders: enabledProviders(),
+  });
 }
 
 // ---- Uploads ----

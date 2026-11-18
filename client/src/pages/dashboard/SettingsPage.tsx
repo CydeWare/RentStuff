@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { Camera } from 'lucide-react';
-import { meApi, uploadApi } from '@/services/endpoints';
+import { authApi, meApi, oauthStartUrl, uploadApi } from '@/services/endpoints';
 import { ApiError, errorMessage } from '@/services/api';
 import { useAuth, ME_KEY } from '@/hooks/useAuth';
-import { useLocations } from '@/hooks/useMeta';
+import { useAppConfig, useLocations } from '@/hooks/useMeta';
+import { OAUTH_ERRORS, ProviderIcon } from '@/components/SocialLogin';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Switch, Textarea } from '@/components/ui/form-controls';
 import { Badge, Card, PageHeader, UserAvatar } from '@/components/ui/misc';
@@ -36,7 +39,8 @@ function ProfileSection({ user }: { user: Me }) {
     defaultValues: { name: user.name, phone: user.phone, city: user.city, district: user.district ?? '', bio: user.bio ?? '' },
   });
   const { register, control, handleSubmit, watch, setValue, reset, formState: { errors, isDirty } } = form;
-  useEffect(() => reset({ name: user.name, phone: user.phone, city: user.city, district: user.district ?? '', bio: user.bio ?? '' }), [user, reset]);
+  // Re-apply once locations load: a native <select> can't show a value before its options exist.
+  useEffect(() => reset({ name: user.name, phone: user.phone, city: user.city, district: user.district ?? '', bio: user.bio ?? '' }), [user, reset, provinces.length]);
   const city = watch('city');
   const districts = provinces.flatMap((p) => p.cities).find((c) => c.name === city)?.districts ?? [];
 
@@ -133,20 +137,25 @@ function ProfileSection({ user }: { user: Me }) {
   );
 }
 
-const passwordSchema = z
-  .object({
-    currentPassword: z.string().min(1, 'Enter your current password'),
-    newPassword: z.string().min(8, 'At least 8 characters').refine((p) => /[A-Za-z]/.test(p) && /\d/.test(p), 'Use letters and numbers'),
-    confirm: z.string(),
-  })
-  .refine((v) => v.newPassword === v.confirm, { path: ['confirm'], message: 'Passwords do not match' });
+const passwordSchema = (hasPassword: boolean) =>
+  z
+    .object({
+      currentPassword: hasPassword ? z.string().min(1, 'Enter your current password') : z.string().optional(),
+      newPassword: z.string().min(8, 'At least 8 characters').refine((p) => /[A-Za-z]/.test(p) && /\d/.test(p), 'Use letters and numbers'),
+      confirm: z.string(),
+    })
+    .refine((v) => v.newPassword === v.confirm, { path: ['confirm'], message: 'Passwords do not match' });
 
-function PasswordSection() {
-  const { register, handleSubmit, reset, setError, formState: { errors } } = useForm<z.infer<typeof passwordSchema>>({ resolver: zodResolver(passwordSchema) });
+type PasswordValues = { currentPassword?: string; newPassword: string; confirm: string };
+
+function PasswordSection({ user }: { user: Me }) {
+  const qc = useQueryClient();
+  const { register, handleSubmit, reset, setError, formState: { errors } } = useForm<PasswordValues>({ resolver: zodResolver(passwordSchema(user.hasPassword)) });
   const change = useMutation({
     mutationFn: meApi.changePassword,
-    onSuccess: () => {
-      toast.success('Password changed');
+    onSuccess: ({ user: u }) => {
+      toast.success(user.hasPassword ? 'Password changed' : 'Password set. You can now also log in with your email.');
+      qc.setQueryData(ME_KEY, u);
       reset({ currentPassword: '', newPassword: '', confirm: '' });
     },
     onError: (e) => {
@@ -157,10 +166,19 @@ function PasswordSection() {
   return (
     <Card className="p-5 sm:p-7">
       <h2 className="text-lg font-bold">Password</h2>
-      <form className="mt-5 grid gap-5 sm:grid-cols-3" noValidate onSubmit={handleSubmit(({ currentPassword, newPassword }) => change.mutate({ currentPassword, newPassword }))}>
-        <Field label="Current password" htmlFor="p-cur" error={errors.currentPassword?.message}>
-          <Input id="p-cur" type="password" autoComplete="current-password" {...register('currentPassword')} />
-        </Field>
+      {!user.hasPassword && (
+        <p className="text-sm text-muted">You signed up with a social login. Set a password to also log in with {user.email}.</p>
+      )}
+      <form
+        className="mt-5 grid gap-5 sm:grid-cols-3"
+        noValidate
+        onSubmit={handleSubmit(({ currentPassword, newPassword }) => change.mutate({ currentPassword: user.hasPassword ? currentPassword : undefined, newPassword }))}
+      >
+        {user.hasPassword && (
+          <Field label="Current password" htmlFor="p-cur" error={errors.currentPassword?.message}>
+            <Input id="p-cur" type="password" autoComplete="current-password" {...register('currentPassword')} />
+          </Field>
+        )}
         <Field label="New password" htmlFor="p-new" error={errors.newPassword?.message}>
           <Input id="p-new" type="password" autoComplete="new-password" {...register('newPassword')} />
         </Field>
@@ -169,10 +187,111 @@ function PasswordSection() {
         </Field>
         <div className="sm:col-span-3">
           <Button type="submit" variant="outline" loading={change.isPending}>
-            Update password
+            {user.hasPassword ? 'Update password' : 'Set password'}
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+function ConnectedAccountsSection({ user }: { user: Me }) {
+  const qc = useQueryClient();
+  const { data: config } = useAppConfig();
+  const [params, setParams] = useSearchParams();
+  const [toRemove, setToRemove] = useState<{ key: string; label: string } | null>(null);
+  const providers = config?.oauthProviders ?? [];
+  // Also list connected providers that were later disabled on the server, so they can be removed.
+  const all = [...providers, ...user.connectedProviders.filter((k) => !providers.some((p) => p.key === k)).map((k) => ({ key: k, label: k }))];
+
+  useEffect(() => {
+    const connected = params.get('connected');
+    const err = params.get('oauthError');
+    if (!connected && !err) return;
+    if (connected) {
+      toast.success(`${providers.find((p) => p.key === connected)?.label ?? connected} connected. You can now use it to log in.`, { id: 'oauth-result' });
+      qc.invalidateQueries({ queryKey: ME_KEY });
+    }
+    if (err) toast.error(OAUTH_ERRORS[err] ?? OAUTH_ERRORS.failed, { id: 'oauth-result' });
+    const next = new URLSearchParams(params);
+    next.delete('connected');
+    next.delete('oauthError');
+    next.delete('provider');
+    setParams(next, { replace: true });
+  }, [params, setParams, providers, qc]);
+
+  const remove = useMutation({
+    mutationFn: (key: string) => authApi.disconnect(key),
+    onSuccess: ({ user: u }) => {
+      qc.setQueryData(ME_KEY, u);
+      toast.success('Login method removed');
+      setToRemove(null);
+    },
+    onError: (e) => {
+      toast.error(errorMessage(e));
+      setToRemove(null);
+    },
+  });
+
+  if (all.length === 0) return null;
+  const loginMethods = user.connectedProviders.length + (user.hasPassword ? 1 : 0);
+
+  return (
+    <Card className="p-5 sm:p-7">
+      <h2 className="text-lg font-bold">Login methods</h2>
+      <p className="text-sm text-muted">Connect accounts to log in with one click. We only use them to confirm it's you.</p>
+      <ul className="mt-5 divide-y divide-line">
+        <li className="flex items-center gap-3 py-3">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-stone-100 text-sm font-bold">@</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Email and password</p>
+            <p className="truncate text-xs text-muted">{user.hasPassword ? user.email : 'Not set up. Set a password below.'}</p>
+          </div>
+          {user.hasPassword && <Badge tone="green">Active</Badge>}
+        </li>
+        {all.map((p) => {
+          const connected = user.connectedProviders.includes(p.key);
+          return (
+            <li key={p.key} className="flex items-center gap-3 py-3">
+              <span className="flex size-9 items-center justify-center rounded-xl border border-line bg-white">
+                <ProviderIcon provider={p.key} />
+              </span>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">{p.label}</p>
+                <p className="text-xs text-muted">{connected ? 'Connected' : 'Not connected'}</p>
+              </div>
+              {connected ? (
+                <Button
+                  size="sm"
+                  variant="danger-outline"
+                  onClick={() => setToRemove(p)}
+                  disabled={loginMethods <= 1}
+                  title={loginMethods <= 1 ? 'This is your only way to log in' : undefined}
+                >
+                  Remove
+                </Button>
+              ) : providers.some((x) => x.key === p.key) ? (
+                <Button size="sm" variant="outline" asChild>
+                  <a href={oauthStartUrl(p.key, { mode: 'connect' })}>Connect</a>
+                </Button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {loginMethods <= 1 && user.connectedProviders.length > 0 && (
+        <p className="mt-2 text-xs text-muted">To remove this login method, first set a password or connect another one.</p>
+      )}
+      <ConfirmDialog
+        open={Boolean(toRemove)}
+        onOpenChange={(o) => !o && setToRemove(null)}
+        title={`Remove ${toRemove?.label}?`}
+        description={`You won't be able to log in with ${toRemove?.label} until you connect it again.`}
+        confirmLabel="Remove"
+        destructive
+        loading={remove.isPending}
+        onConfirm={() => toRemove && remove.mutate(toRemove.key)}
+      />
     </Card>
   );
 }
@@ -234,7 +353,8 @@ export function SettingsPage() {
     <div className="space-y-6">
       <PageHeader title="Account settings" />
       <ProfileSection user={user} />
-      <PasswordSection />
+      <ConnectedAccountsSection user={user} />
+      <PasswordSection user={user} />
       <NotificationSection user={user} />
     </div>
   );

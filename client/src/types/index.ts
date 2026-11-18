@@ -17,7 +17,15 @@ export interface PublicUser {
   createdAt: string;
 }
 
+export interface OAuthProvider {
+  key: string;
+  label: string;
+}
+
 export interface Me extends PublicUser {
+  hasPassword: boolean;
+  /** Provider keys, e.g. ["google"]. */
+  connectedProviders: string[];
   email: string;
   phone: string;
   province: string | null;

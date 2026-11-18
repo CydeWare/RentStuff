@@ -13,7 +13,8 @@ export const updateProfileSchema = z.object({
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
+  // Optional so social-login-only accounts can set a first password; required by the service otherwise.
+  currentPassword: z.string().max(128).optional(),
   newPassword: passwordSchema,
 });
 

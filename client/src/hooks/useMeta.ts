@@ -16,3 +16,12 @@ export function useLocations() {
     staleTime: Infinity,
   });
 }
+
+/** Public server configuration, e.g. which social logins are enabled. */
+export function useAppConfig() {
+  return useQuery({
+    queryKey: ['meta', 'config'],
+    queryFn: metaApi.config,
+    staleTime: 10 * 60 * 1000,
+  });
+}
