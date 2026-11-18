@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Brand: deep green-teal */
+  --color-brand-50: #effaf6;
+  --color-brand-100: #d7f2e8;
+  --color-brand-200: #b1e4d3;
+  --color-brand-300: #7fceb7;
+  --color-brand-400: #4cb197;
+  --color-brand-500: #2a957d;
+  --color-brand-600: #1c7a66;
+  --color-brand-700: #0f6b5c;
+  --color-brand-800: #11504a;
+  --color-brand-900: #10423d;
+
+  /* Accent used sparingly (ratings, highlights) */
+  --color-accent-400: #f5b041;
+  --color-accent-500: #e99a1f;
+
+  /* Warm neutrals */
+  --color-canvas: #faf9f6;
+  --color-ink: #1f2328;
+  --color-muted: #646b73;
+  --color-line: #e8e5df;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-lift: 0 10px 30px -12px rgb(16 24 40 / 0.18);
+
+  --animate-fade-in: fade-in 0.25s ease-out;
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans;
+  }
+  ::selection {
+    @apply bg-brand-100;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+}
+
+/* react-day-picker theme */
+.rdp-root {
+  --rdp-accent-color: var(--color-brand-700);
+  --rdp-accent-background-color: var(--color-brand-100);
+  --rdp-day-height: 40px;
+  --rdp-day-width: 40px;
+  --rdp-day_button-height: 38px;
+  --rdp-day_button-width: 38px;
+  --rdp-range_middle-background-color: var(--color-brand-100);
+  --rdp-range_middle-color: var(--color-brand-900);
+  --rdp-today-color: var(--color-brand-700);
+  font-size: 0.875rem;
+}
+.rdp-root .rdp-disabled:not(.rdp-outside) {
+  opacity: 1;
+  color: #b9bec4;
+  text-decoration: line-through;
+}
+.rdp-root .rdp-booked:not(.rdp-outside) {
+  color: #b9bec4;
+  background: repeating-linear-gradient(-45deg, transparent 0 4px, #f1efeb 4px 8px);
+  text-decoration: line-through;
+}
