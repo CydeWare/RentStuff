@@ -68,5 +68,6 @@ export const OAUTH_ERRORS: Record<string, string> = {
   failed: "We couldn't complete sign-in with that provider. Please try again.",
   suspended: 'This account has been suspended. Please contact support.',
   unavailable: 'That login method is not available right now.',
+  rate_limited: 'Too many sign-in attempts. Please wait a few minutes and try again.',
   already_linked: 'That account is already connected to a different Rentora account.',
 };

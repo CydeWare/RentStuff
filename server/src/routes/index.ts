@@ -6,7 +6,7 @@ import * as users from '../controllers/user.controller.js';
 import * as misc from '../controllers/misc.controller.js';
 import * as admin from '../controllers/admin.controller.js';
 import { optionalAuth, requireAdmin, requireAuth } from '../middleware/auth.js';
-import { authLimiter, sensitiveLimiter } from '../middleware/rateLimit.js';
+import { authLimiter, oauthLimiter, sensitiveLimiter } from '../middleware/rateLimit.js';
 import { imageUpload, MAX_IMAGES_PER_UPLOAD } from '../middleware/upload.js';
 
 export const router = Router();
@@ -23,8 +23,8 @@ router.get('/auth/me', optionalAuth, auth.me);
 // Social login. The literal routes come before /:provider/* so they are not captured.
 router.get('/auth/oauth/signup', auth.oauthPendingSignup);
 router.post('/auth/oauth/complete', authLimiter, auth.oauthComplete);
-router.get('/auth/oauth/:provider/start', authLimiter, optionalAuth, auth.oauthStart);
-router.get('/auth/oauth/:provider/callback', authLimiter, optionalAuth, auth.oauthCallback);
+router.get('/auth/oauth/:provider/start', oauthLimiter, optionalAuth, auth.oauthStart);
+router.get('/auth/oauth/:provider/callback', oauthLimiter, optionalAuth, auth.oauthCallback);
 
 // ---- Meta ----
 router.get('/meta/categories', misc.categories);
